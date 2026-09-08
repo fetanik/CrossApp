@@ -7,9 +7,10 @@
 
 ## Запуск
 
+```
 dotnet build
-
 dotnet run --project src/Cli
+```
 
 ## Середовище
 
@@ -20,12 +21,14 @@ RID: win-x64
 ## Додаткове завдання
 
 ### Self-contained publish
-
+```
 win-x64: 76,66 MB  
 linux-x64: 78,79 MB
-
+```
 ### JSON
 
 Запуск програми у форматі JSON:
 
+```
 dotnet run --project src/Cli -- --json
+```
