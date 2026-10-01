@@ -9,8 +9,10 @@ public sealed class Loan
 
     public DateTime? ReturnedOn { get; private set; }
 
+    public LoanStatus Status { get; private set; }
+
     public bool IsClosed =>
-        ReturnedOn.HasValue;
+        Status == LoanStatus.Closed;
 
     private Loan(
         string id,
@@ -22,7 +24,9 @@ public sealed class Loan
         BookCopyId = bookCopyId;
         ReaderId = readerId;
         IssuedOn = issuedOn;
+
         ReturnedOn = null;
+        Status = LoanStatus.Open;
     }
 
     public static Loan Open(
@@ -61,11 +65,8 @@ public sealed class Loan
 
     public void Close(DateTime returnedOn)
     {
-        if (IsClosed)
-        {
-            throw new InvalidOperationException(
-                $"Видача {Id} вже закрита");
-        }
+        EnsureTransitionAllowed(
+            LoanStatus.Closed);
 
         if (returnedOn < IssuedOn)
         {
@@ -76,13 +77,56 @@ public sealed class Loan
         }
 
         ReturnedOn = returnedOn;
+        Status = LoanStatus.Closed;
+    }
+
+    public void Cancel()
+    {
+        EnsureTransitionAllowed(
+            LoanStatus.Cancelled);
+
+        Status = LoanStatus.Cancelled;
+    }
+
+    private void EnsureTransitionAllowed(
+        LoanStatus newStatus)
+    {
+        bool allowed =
+            (Status, newStatus) switch
+            {
+                (LoanStatus.Open,
+                 LoanStatus.Closed) => true,
+
+                (LoanStatus.Open,
+                 LoanStatus.Cancelled) => true,
+
+                _ => false
+            };
+
+        if (!allowed)
+        {
+            throw new InvalidOperationException(
+                $"Перехід зі стану {Status} " +
+                $"у стан {newStatus} неможливий");
+        }
     }
 
     public override string ToString()
     {
-        string status = IsClosed
-            ? $"повернено {ReturnedOn:yyyy-MM-dd}"
-            : "книга ще у читача";
+        string status = Status switch
+        {
+            LoanStatus.Open =>
+                "книга ще у читача",
+
+            LoanStatus.Closed =>
+                $"повернено {ReturnedOn:yyyy-MM-dd}",
+
+            LoanStatus.Cancelled =>
+                "видачу скасовано",
+
+            _ =>
+                "невідомий стан"
+        };
 
         return $"{Id}: книга {BookCopyId}, " +
                $"читач {ReaderId}, " +
