@@ -1,10 +1,22 @@
-﻿using Core.Dto;
+﻿using Core.Domain;
+using Core.Dto;
 using Core.Import;
+
+bool importMode = args.Any(
+    a => a.Equals(
+        "--import",
+        StringComparison.OrdinalIgnoreCase));
 
 bool mixedMode = args.Any(
     a => a.Equals(
         "--mixed",
         StringComparison.OrdinalIgnoreCase));
+
+if (!importMode)
+{
+    RunDomainDemo();
+    return 0;
+}
 
 string path = args.FirstOrDefault(
     a => !a.StartsWith("--"))
@@ -123,4 +135,114 @@ static void PrintStatistics<T>(
         $"прийнято {accepted} / " +
         $"пропущено {skipped} / " +
         $"помилок {errorPercentage:F1}%");
+}
+
+
+static void RunDomainDemo()
+{
+    Console.WriteLine(
+        "=== Сценарій 1: успіх ===");
+
+    BookCopy book = BookCopy.Create(
+        "B-001",
+        "978-617-123456-7",
+        "Кобзар",
+        2020,
+        "Тарас Шевченко");
+
+    Console.WriteLine(book);
+
+    book.Issue();
+
+    Console.WriteLine(book);
+
+    Loan loan = Loan.Open(
+        "L-001",
+        book.Id,
+        "R-001",
+        new DateTime(2026, 10, 1));
+
+    Console.WriteLine(loan);
+
+    loan.Close(
+        new DateTime(2026, 10, 10));
+
+    book.Return();
+
+    Console.WriteLine(loan);
+    Console.WriteLine(book);
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        "=== Сценарій 2: порушення інваріантів ===");
+
+    TryDo(
+        "порожній ISBN",
+        () => BookCopy.Create(
+            "B-002",
+            " ",
+            "Тестова книга",
+            2020));
+
+    TryDo(
+        "некоректний рік",
+        () => BookCopy.Create(
+            "B-003",
+            "978-1234567890",
+            "Тестова книга",
+            -5));
+
+    book.Issue();
+
+    bool stateBeforeFailedIssue =
+        book.IsIssued;
+
+    TryDo(
+        "повторна видача книги",
+        () => book.Issue());
+
+    Console.WriteLine(
+        $"Стан до помилки: {stateBeforeFailedIssue}, " +
+        $"стан після помилки: {book.IsIssued}");
+
+    Loan secondLoan = Loan.Open(
+        "L-002",
+        book.Id,
+        "R-002",
+        new DateTime(2026, 10, 10));
+
+    TryDo(
+        "повернення раніше дати видачі",
+        () => secondLoan.Close(
+            new DateTime(2026, 10, 5)));
+
+    secondLoan.Close(
+        new DateTime(2026, 10, 15));
+
+    TryDo(
+        "повторне закриття видачі",
+        () => secondLoan.Close(
+            new DateTime(2026, 10, 20)));
+}
+
+
+static void TryDo(
+    string title,
+    Action action)
+{
+    try
+    {
+        action();
+
+        Console.WriteLine(
+            $" {title}: виняток НЕ спрацював");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(
+            $" {title}: " +
+            $"{ex.GetType().Name} — " +
+            $"{ex.Message}");
+    }
 }
