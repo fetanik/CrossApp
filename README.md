@@ -133,3 +133,41 @@ Framework-dependent потребує встановленого .NET Runtime.
 ```powershell
 dotnet run --project src/Cli
 ```
+
+## Lab05 — Сервісний шар і сховища
+
+У лабораторній роботі реалізовано сервісний шар для предметної області «Бібліотека».
+
+Додано:
+- `ILibraryStore` — абстракція сховища;
+- `InMemoryLibraryStore` — зберігання даних у пам'яті;
+- `FileLibraryStore` — зберігання даних у JSON-файлі;
+- `LendingService` — бізнес-операції бібліотеки;
+- ручне Dependency Injection у `Program.cs`.
+
+Основні операції:
+- додавання примірника книги;
+- видача книги читачу;
+- повернення книги;
+- отримання списку книг;
+- пошук книги за id.
+
+### Запуск у пам'яті
+
+```powershell
+dotnet run --project src/Cli
+```
+
+Після завершення програми дані не зберігаються.
+
+### Запуск із файловим сховищем
+
+```powershell
+dotnet run --project src/Cli -- --file
+```
+
+Дані зберігаються у JSON-файлі та доступні при наступному запуску.
+
+Схема залежностей:
+
+`Cli → LendingService → ILibraryStore → InMemoryLibraryStore | FileLibraryStore`
