@@ -1,36 +1,23 @@
-﻿using Core;
-using Core.Abstractions;
-using Core.Services;
-using Core.Storage;
+﻿using Core.Services;
 
-bool useFile =
-    args.Any(
-        arg => arg.Equals(
-            "--file",
-            StringComparison.OrdinalIgnoreCase));
-
-string dataPath =
-    Path.Combine(
-        AppContext.BaseDirectory,
-        "data",
-        "library.json");
-
-ILibraryStore store =
-    useFile
-        ? new FileLibraryStore(dataPath)
-        : new InMemoryLibraryStore(
-            SampleData.Copies());
+StoreConfiguration configuration =
+    StoreFactory.Create(args);
 
 var service =
-    new LendingService(store);
+    new LendingService(
+        configuration.Store);
 
 Console.WriteLine(
-    $"Сховище: {store.GetType().Name}");
+    $"Сховище: {configuration.BaseStoreName}");
 
-if (useFile)
+Console.WriteLine(
+    $"Кеш: " +
+    $"{(configuration.CacheEnabled ? "увімкнено" : "вимкнено")}");
+
+if (configuration.FilePath is not null)
 {
     Console.WriteLine(
-        $"Файл: {dataPath}");
+        $"Файл: {configuration.FilePath}");
 }
 
 Console.WriteLine(
@@ -54,6 +41,7 @@ try
     Console.WriteLine(book);
 
     Console.WriteLine();
+
     Console.WriteLine(
         "=== Видача книги ===");
 
@@ -65,6 +53,7 @@ try
     Console.WriteLine(loan);
 
     Console.WriteLine();
+
     Console.WriteLine(
         "=== Повернення книги ===");
 
@@ -75,6 +64,7 @@ try
         service.FindBook(book.Id));
 
     Console.WriteLine();
+
     Console.WriteLine(
         "=== Список книг ===");
 
@@ -85,6 +75,25 @@ try
     }
 
     Console.WriteLine();
+
+    Console.WriteLine(
+        "=== Пошук через Func<BookCopy, bool> ===");
+
+    var oldBooks =
+        service.SearchBooks(
+            copy => copy.Year < 1900);
+
+    Console.WriteLine(
+        "Книги, видані до 1900 року:");
+
+    foreach (var item in oldBooks)
+    {
+        Console.WriteLine(
+            $"{item.Title} ({item.Year})");
+    }
+
+    Console.WriteLine();
+
     Console.WriteLine(
         "=== Сценарій відмови ===");
 

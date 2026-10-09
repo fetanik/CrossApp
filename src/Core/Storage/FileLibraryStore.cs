@@ -74,7 +74,8 @@ public sealed class FileLibraryStore : ILibraryStore
                         dto.ReaderId,
                         dto.IssuedOn);
 
-                if (dto.Status == nameof(LoanStatus.Closed))
+                if (dto.Status ==
+                    nameof(LoanStatus.Closed))
                 {
                     if (dto.ReturnedOn is null)
                     {
@@ -139,7 +140,6 @@ public sealed class FileLibraryStore : ILibraryStore
             json);
     }
 
-
     public IReadOnlyList<BookCopy> ListCopies()
     {
         EnsureLoaded();
@@ -152,6 +152,18 @@ public sealed class FileLibraryStore : ILibraryStore
         EnsureLoaded();
 
         return _copies.GetValueOrDefault(id);
+    }
+
+    public IReadOnlyList<BookCopy> FindCopies(
+        Func<BookCopy, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        EnsureLoaded();
+
+        return _copies.Values
+            .Where(predicate)
+            .ToList();
     }
 
     public void AddCopy(BookCopy copy)
@@ -183,7 +195,6 @@ public sealed class FileLibraryStore : ILibraryStore
 
         Flush();
     }
-
 
     public IReadOnlyList<Loan> ListLoans()
     {

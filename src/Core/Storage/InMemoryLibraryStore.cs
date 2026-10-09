@@ -29,6 +29,16 @@ public sealed class InMemoryLibraryStore : ILibraryStore
     public BookCopy? GetCopyById(string id) =>
         _copies.GetValueOrDefault(id);
 
+    public IReadOnlyList<BookCopy> FindCopies(
+        Func<BookCopy, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        return _copies.Values
+            .Where(predicate)
+            .ToList();
+    }
+
     public void AddCopy(BookCopy copy)
     {
         ArgumentNullException.ThrowIfNull(copy);
@@ -48,7 +58,6 @@ public sealed class InMemoryLibraryStore : ILibraryStore
 
         _copies[copy.Id] = copy;
     }
-
 
     public IReadOnlyList<Loan> ListLoans() =>
         _loans.Values.ToList();

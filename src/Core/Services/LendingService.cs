@@ -47,35 +47,19 @@ public sealed class LendingService
             ?? throw new InvalidOperationException(
                 $"Примірник з id={copyId} не знайдено.");
 
-        int openLoans =
-            _store.ListLoans()
-                .Count(
-                    loan =>
-                        loan.ReaderId.Equals(
-                            readerId,
-                            StringComparison.OrdinalIgnoreCase)
-                        &&
-                        loan.Status == LoanStatus.Open);
-
-        if (openLoans >= 5)
-        {
-            throw new InvalidOperationException(
-                $"Читач {readerId} уже має " +
-                "5 відкритих видач.");
-        }
-
-        copy.Issue();
+        IReadOnlyList<Loan> existingLoans =
+            _store.ListLoans();
 
         Loan loan =
-            Loan.Open(
+            LoanService.IssueBook(
                 Guid.NewGuid()
                     .ToString("N")[..8],
-                copy.Id,
+                copy,
                 readerId,
-                DateTime.Now);
+                DateTime.Now,
+                existingLoans);
 
         _store.UpdateCopy(copy);
-
         _store.AddLoan(loan);
 
         return loan;
@@ -102,7 +86,6 @@ public sealed class LendingService
         copy.Return();
 
         _store.UpdateLoan(loan);
-
         _store.UpdateCopy(copy);
     }
 
@@ -112,6 +95,11 @@ public sealed class LendingService
     public IReadOnlyList<Loan> AllLoans() =>
         _store.ListLoans();
 
-    public BookCopy? FindBook(string id) =>
+    public BookCopy? FindBook(
+        string id) =>
         _store.GetCopyById(id);
+
+    public IReadOnlyList<BookCopy> SearchBooks(
+        Func<BookCopy, bool> predicate) =>
+        _store.FindCopies(predicate);
 }

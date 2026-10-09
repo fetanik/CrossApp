@@ -12,6 +12,8 @@ public interface ILibraryStore
 
     void UpdateCopy(BookCopy copy);
 
+    IReadOnlyList<BookCopy> FindCopies(
+        Func<BookCopy, bool> predicate);
 
     IReadOnlyList<Loan> ListLoans();
 

@@ -2,9 +2,9 @@
 
 Наскрізний проєкт з крос-платформного програмування.
 
-Предметна область: Бібліотека.
+Предметна область: **Бібліотека**.
 
-Сутності: Book, BookCopy, Reader, Loan.
+Сутності: `Book`, `BookCopy`, `Reader`, `Loan`.
 
 Призначення: облік видач примірників книг читачам і їх повернень.
 
@@ -15,19 +15,18 @@ CrossApp/
 ├── CrossApp.sln
 ├── README.md
 ├── .gitignore
-├── data/
 └── src/
     ├── Core/
-    │   ├── Core.csproj
-    │   ├── EnvironmentInfo.cs
+    │   ├── Abstractions/
+    │   ├── Domain/
     │   ├── Dto/
     │   ├── Import/
-    │   └── Domain/
-    │       ├── BookCopy.cs
-    │       └── Loan.cs
+    │   ├── Services/
+    │   ├── Storage/
+    │   └── SampleData.cs
     └── Cli/
-        ├── Cli.csproj
-        └── Program.cs
+        ├── Program.cs
+        └── StoreFactory.cs
 ```
 
 Залежність між проєктами:
@@ -36,20 +35,7 @@ CrossApp/
 Cli → Core
 ```
 
-У Core використовуються каталоги:
-
-```text
-Core/Dto/
-Core/Import/
-Core/Domain/
-```
-
-У наступних роботах буде додано:
-```text
-Core/Storage/
-```
-
-## Команди
+## Основні команди
 
 Збірка:
 
@@ -82,75 +68,55 @@ dotnet publish src/Cli -c Release -f net10.0 -r win-x64 --self-contained false
 | win-x64 | self-contained | 76,68 МБ | Ні |
 | win-x64 | framework-dependent | 0,19 МБ | Так (.NET 10) |
 
-Self-contained містить .NET Runtime, тому займає більше місця.
-Framework-dependent потребує встановленого .NET Runtime.
+Self-contained містить .NET Runtime, тому займає більше місця. Framework-dependent потребує встановленого .NET Runtime.
 
 ## Лабораторна робота 4 — доменна модель
 
-У лабораторній роботі створено доменні сутності `BookCopy` та `Loan`.
+Реалізовано доменні сутності `BookCopy`, `Loan`, `Reader` та бізнес-правила.
 
-### Інваріанти
+Основні інваріанти:
 
-- `Id` книги не може бути порожнім.
-- `ISBN` не може бути порожнім.
-- Назва книги не може бути порожньою.
-- Рік видання має бути більшим за 0.
-- Не можна повторно видати вже видану книгу.
-- Не можна повернути книгу, яка не була видана.
-- `Id` видачі не може бути порожнім.
-- `ReaderId` не може бути порожнім.
-- Дата повернення не може бути раніше дати видачі.
-- Не можна повторно закрити вже закриту видачу.
-
-### Доменні операції
-
-Для `BookCopy` реалізовано:
-
-- `Create(...)` — створення примірника книги;
-- `Issue()` — видача книги;
-- `Return()` — повернення книги;
-- `ToDto()` — перетворення сутності в `BookDto`;
-- `FromDto(...)` — відновлення сутності з `BookDto`.
-
-Для `Loan` реалізовано:
-
-- `Open(...)` — відкриття видачі;
-- `Close(...)` — закриття видачі.
-
-### Обробка помилок
-
-Для некоректних вхідних аргументів використовуються:
-
-- `ArgumentException`;
-- `ArgumentOutOfRangeException`.
-
-Для операцій, які неможливо виконати через поточний стан об'єкта, використовується:
-
-- `InvalidOperationException`.
-
-### Запуск лабораторної роботи 4
-
-```powershell
-dotnet run --project src/Cli
-```
-
-## Lab05 — Сервісний шар і сховища
-
-У лабораторній роботі реалізовано сервісний шар для предметної області «Бібліотека».
-
-Додано:
-- `ILibraryStore` — абстракція сховища;
-- `InMemoryLibraryStore` — зберігання даних у пам'яті;
-- `FileLibraryStore` — зберігання даних у JSON-файлі;
-- `LendingService` — бізнес-операції бібліотеки;
-- ручне Dependency Injection у `Program.cs`.
+- обов'язкові `Id`, `ISBN`, назва книги та `ReaderId`;
+- рік видання має бути більшим за 0;
+- не можна повторно видати вже виданий примірник;
+- не можна повернути невиданий примірник;
+- дата повернення не може бути раніше дати видачі;
+- один читач може мати не більше 5 відкритих видач;
+- дозволені переходи станів `Open → Closed` та `Open → Cancelled`.
 
 Основні операції:
-- додавання примірника книги;
-- видача книги читачу;
-- повернення книги;
-- отримання списку книг;
-- пошук книги за id.
+
+- `BookCopy.Create()`, `Issue()`, `Return()`;
+- `Loan.Open()`, `Close()`, `Cancel()`;
+- мапінг між сутністю та DTO.
+
+Для помилок використовуються `ArgumentException`, `ArgumentOutOfRangeException` та `InvalidOperationException`.
+
+## Лабораторна робота 5 — сервісний шар і сховища
+
+Реалізовано:
+
+- `ILibraryStore` — контракт сховища;
+- `InMemoryLibraryStore` — сховище в пам'яті;
+- `FileLibraryStore` — JSON-сховище;
+- `LendingService` — сервіс прикладних операцій;
+- ручне Dependency Injection через конструктор.
+
+Схема залежностей:
+
+```text
+Cli → LendingService → ILibraryStore
+                      ↓
+       InMemoryLibraryStore | FileLibraryStore
+```
+
+Основні операції:
+
+- додавання книги;
+- видача;
+- повернення;
+- список книг;
+- пошук за ID.
 
 ### Запуск у пам'яті
 
@@ -166,8 +132,56 @@ dotnet run --project src/Cli
 dotnet run --project src/Cli -- --file
 ```
 
-Дані зберігаються у JSON-файлі та доступні при наступному запуску.
+Дані зберігаються у JSON і відновлюються при наступному запуску.
 
-Схема залежностей:
+## Додаткові завдання Lab05
 
-`Cli → LendingService → ILibraryStore → InMemoryLibraryStore | FileLibraryStore`
+### 1. CachingLibraryStore
+
+Реалізовано декоратор `CachingLibraryStore`, який приймає інший `ILibraryStore` і додає кешування.
+
+```powershell
+dotnet run --project src/Cli -- --cache
+```
+
+або:
+
+```powershell
+dotnet run --project src/Cli -- --file --cache
+```
+
+### 2. Пошук через Func<BookCopy, bool>
+
+До сховища додано:
+
+```csharp
+IReadOnlyList<BookCopy> FindCopies(
+    Func<BookCopy, bool> predicate);
+```
+
+Приклад:
+
+```csharp
+copy => copy.Year < 1900
+```
+
+### 3. StoreFactory
+
+Логіку створення сховищ винесено з `Program.cs` у:
+
+```csharp
+StoreFactory.Create(args)
+```
+
+Фабрика аналізує аргументи `--file` і `--cache` та створює потрібну конфігурацію.
+
+## Варіанти запуску
+
+```powershell
+dotnet run --project src/Cli
+dotnet run --project src/Cli -- --cache
+dotnet run --project src/Cli -- --file
+dotnet run --project src/Cli -- --file --cache
+```
+
+DI-контейнер `Microsoft.Extensions.DependencyInjection` не використовується.
