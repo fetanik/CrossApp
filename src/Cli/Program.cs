@@ -1,4 +1,7 @@
+using Cli.Notifications;
+using Core.Abstractions;
 using Core.Events;
+using Core.Import;
 using Core.Services;
 
 StoreConfiguration configuration = StoreFactory.Create(args);
@@ -18,6 +21,57 @@ Console.WriteLine();
 // Lab06: шлях до журналу формується у Cli, а не в Core.
 string logPath = Path.Combine(AppContext.BaseDirectory, "logs", "app.log");
 Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+
+// Додаткове завдання 2: Action<string> у методі імпорту CSV.
+// Запуск: dotnet run --project src/Cli -f net10.0 -- --import-demo
+if (args.Any(arg => arg.Equals("--import-demo", StringComparison.OrdinalIgnoreCase)))
+{
+    string csvPath = Path.Combine(Environment.CurrentDirectory, "data", "sample.csv");
+    Console.WriteLine("=== Додаткове завдання 2: Action<string> ===");
+    Console.WriteLine($"Файл CSV: {csvPath}");
+
+    if (!File.Exists(csvPath))
+    {
+        Console.WriteLine("Файл не знайдено. Запусти команду з кореня проєкту CrossApp.");
+        return;
+    }
+
+    int skipped = 0;
+    var imported = BookCsvImporter.Load(csvPath, message =>
+    {
+        skipped++;
+        Console.WriteLine($"Пропущено: {message}");
+    });
+
+    Console.WriteLine($"Прийнято: {imported.Items.Count}");
+    Console.WriteLine($"Пропущено: {skipped}");
+    return;
+}
+
+// Додаткове завдання 1: окрема DI-демонстрація, що не змінює
+// основний сценарій перевірки event/+=/-=.
+// Запуск: dotnet run --project src/Cli -f net10.0 -- --sink-demo
+if (args.Any(arg => arg.Equals("--sink-demo", StringComparison.OrdinalIgnoreCase)))
+{
+    string sinkPath = Path.Combine(AppContext.BaseDirectory, "logs", "sink.log");
+
+    INotificationSink notificationSink = new CompositeNotificationSink(
+        new ConsoleSink(),
+        new FileSink(sinkPath));
+
+    // Ручне Dependency Injection: Cli передає готовий sink сервісу.
+    var sinkService = new LendingService(configuration.Store, notificationSink);
+
+    Console.WriteLine("=== Додаткове завдання 1: INotificationSink / DI ===");
+    var demoBook = sinkService.AddBook(
+        "9786179999999", "Книга для перевірки DI", 2026, "Тестовий автор");
+    var demoLoan = sinkService.IssueCopy(demoBook.Id, "R-DI");
+    sinkService.ReturnCopy(demoLoan.Id);
+
+    Console.WriteLine($"Події записані також до: {sinkPath}");
+    return;
+}
 
 List<string> invocationOrder = new();
 int changes = 0;

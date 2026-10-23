@@ -7,10 +7,15 @@ namespace Core.Services;
 public sealed class LendingService
 {
     private readonly ILibraryStore _store;
+    private readonly INotificationSink? _notificationSink;
 
-    public LendingService(ILibraryStore store)
+    // Другий параметр необов'язковий: існуючий код лабораторної №6 працює без змін.
+    public LendingService(
+        ILibraryStore store,
+        INotificationSink? notificationSink = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _notificationSink = notificationSink;
     }
 
     // Підписники отримують повідомлення лише після успішної зміни даних.
@@ -22,9 +27,13 @@ public sealed class LendingService
         string? readerId = null,
         DateTime? issuedOn = null)
     {
-        Changed?.Invoke(
-            this,
-            new LibraryChangedEventArgs(kind, copyId, readerId, issuedOn));
+        var args = new LibraryChangedEventArgs(kind, copyId, readerId, issuedOn);
+
+        // Observer: невідома заздалегідь кількість підписників.
+        Changed?.Invoke(this, args);
+
+        // Альтернативний варіант: явна залежність від абстракції через DI.
+        _notificationSink?.Notify(args);
     }
 
     public BookCopy AddBook(

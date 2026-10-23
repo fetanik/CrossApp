@@ -185,3 +185,43 @@ dotnet run --project src/Cli -- --file --cache
 ```
 
 DI-контейнер `Microsoft.Extensions.DependencyInjection` не використовується.
+
+
+## Лабораторна робота №6
+
+Тема: Доменні події, делегати Action/Func, лямбди.
+
+Реалізовано:
+- Доменні події BookAdded, CopyIssued, CopyReturned.
+- EventHandler<LibraryChangedEventArgs>.
+- Два підписники: логер та лічильник подій.
+- Лямбда-вираз із замиканням.
+- Підписку та відписку через += і -=.
+- Запис повідомлень у logs/app.log.
+- Оброблення винятків без генерації подій.
+- Пошук через Func<BookCopy, bool>.
+
+### Додаткові завдання
+
+1. Реалізовано INotificationSink з ConsoleSink і FileSink.
+   Використано Dependency Injection через конструктор.
+
+2. Реалізовано Action<string> для повідомлень
+   про пропущені рядки під час CSV-імпорту.
+
+3. Розглянуто особливості та небезпеки async void
+   в асинхронних обробниках подій.
+
+### Демонстрація
+
+Основна частина:
+
+dotnet run --project src/Cli --framework net10.0
+
+INotificationSink:
+
+dotnet run --project src/Cli --framework net10.0 -- --sink-demo
+
+Action<string>:
+
+dotnet run --project src/Cli --framework net10.0 -- --import-demo

@@ -8,7 +8,11 @@ public static class BookCsvImporter
 {
     private const char Separator = ';';
 
-    public static ImportResult<BookDto> Load(string path)
+    // Action<string> повідомляє зовнішньому коду про пропущений рядок.
+    // Параметр необов'язковий, тому попередній виклик Load(path) теж працює.
+    public static ImportResult<BookDto> Load(
+        string path,
+        Action<string>? onSkipped = null)
     {
         var items = new List<BookDto>();
         var errors = new List<string>();
@@ -36,7 +40,9 @@ public static class BookCsvImporter
                     break;
 
                 case ParseFailed failed:
-                    errors.Add($"рядок {number}: {failed.Reason}");
+                    string message = $"рядок {number}: {failed.Reason}";
+                    errors.Add(message);
+                    onSkipped?.Invoke(message);
                     break;
             }
         }
@@ -57,8 +63,7 @@ public static class BookCsvImporter
                     $"очікую 4 колонки, отримано {parts.Length}"),
 
             [_, "", _, _] or [_, _, "", _]
-                => new ParseFailed(
-                    "ISBN або назва книги порожні"),
+                => new ParseFailed("ISBN або назва книги порожні"),
 
             [_, _, _, var year]
                 when !int.TryParse(
@@ -66,10 +71,9 @@ public static class BookCsvImporter
                     NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
                     out int y)
-                || y < 1450
-                || y > DateTime.Now.Year
-                => new ParseFailed(
-                    $"рік '{year}' поза допустимими межами"),
+                    || y < 1450
+                    || y > DateTime.Now.Year
+                => new ParseFailed($"рік '{year}' поза допустимими межами"),
 
             [var id, var isbn, var title, var year]
                 => new ParseOk(
@@ -77,9 +81,7 @@ public static class BookCsvImporter
                         id,
                         isbn,
                         title,
-                        int.Parse(
-                            year,
-                            CultureInfo.InvariantCulture))),
+                        int.Parse(year, CultureInfo.InvariantCulture))),
 
             _ => new ParseFailed(
                 $"занадто багато колонок: {parts.Length}")
@@ -87,10 +89,6 @@ public static class BookCsvImporter
     }
 
     private abstract record ParseOutcome;
-
-    private sealed record ParseOk(BookDto Value)
-        : ParseOutcome;
-
-    private sealed record ParseFailed(string Reason)
-        : ParseOutcome;
+    private sealed record ParseOk(BookDto Value) : ParseOutcome;
+    private sealed record ParseFailed(string Reason) : ParseOutcome;
 }
