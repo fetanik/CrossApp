@@ -1,7 +1,9 @@
-using Cli.Notifications;
+﻿using Cli.Notifications;
 using Core.Abstractions;
+using Core.Domain;
 using Core.Events;
 using Core.Import;
+using Core.Reports;
 using Core.Services;
 
 StoreConfiguration configuration = StoreFactory.Create(args);
@@ -18,13 +20,10 @@ if (configuration.FilePath is not null)
 Console.WriteLine($"Записів до сценарію: {service.AllBooks().Count}");
 Console.WriteLine();
 
-// Lab06: шлях до журналу формується у Cli, а не в Core.
 string logPath = Path.Combine(AppContext.BaseDirectory, "logs", "app.log");
 Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
 
 
-// Додаткове завдання 2: Action<string> у методі імпорту CSV.
-// Запуск: dotnet run --project src/Cli -f net10.0 -- --import-demo
 if (args.Any(arg => arg.Equals("--import-demo", StringComparison.OrdinalIgnoreCase)))
 {
     string csvPath = Path.Combine(Environment.CurrentDirectory, "data", "sample.csv");
@@ -49,9 +48,7 @@ if (args.Any(arg => arg.Equals("--import-demo", StringComparison.OrdinalIgnoreCa
     return;
 }
 
-// Додаткове завдання 1: окрема DI-демонстрація, що не змінює
-// основний сценарій перевірки event/+=/-=.
-// Запуск: dotnet run --project src/Cli -f net10.0 -- --sink-demo
+
 if (args.Any(arg => arg.Equals("--sink-demo", StringComparison.OrdinalIgnoreCase)))
 {
     string sinkPath = Path.Combine(AppContext.BaseDirectory, "logs", "sink.log");
@@ -60,7 +57,7 @@ if (args.Any(arg => arg.Equals("--sink-demo", StringComparison.OrdinalIgnoreCase
         new ConsoleSink(),
         new FileSink(sinkPath));
 
-    // Ручне Dependency Injection: Cli передає готовий sink сервісу.
+
     var sinkService = new LendingService(configuration.Store, notificationSink);
 
     Console.WriteLine("=== Додаткове завдання 1: INotificationSink / DI ===");
@@ -73,10 +70,15 @@ if (args.Any(arg => arg.Equals("--sink-demo", StringComparison.OrdinalIgnoreCase
     return;
 }
 
+if (TryRunReport(args, service))
+{
+    return;
+}
+
 List<string> invocationOrder = new();
 int changes = 0;
 
-// Перший підписник: виводить подію в консоль і зберігає в app.log.
+
 void OnLibraryChanged(object? sender, LibraryChangedEventArgs e)
 {
     invocationOrder.Add("логер");
@@ -99,7 +101,6 @@ void OnLibraryChanged(object? sender, LibraryChangedEventArgs e)
 
 service.Changed += OnLibraryChanged;
 
-// Другий підписник: лямбда із замиканням над changes.
 EventHandler<LibraryChangedEventArgs> counterHandler = (_, _) =>
 {
     invocationOrder.Add("лічильник");
@@ -135,7 +136,6 @@ try
     Console.WriteLine($"Шлях до журналу: {logPath}");
     Console.WriteLine();
 
-    // Спочатку перевіряємо інваріант: повторно закрити позику не можна.
     Console.WriteLine("=== Сценарій відмови (до відписки) ===");
     int beforeFailure = changes;
     try
@@ -168,7 +168,6 @@ try
     Console.WriteLine($"Доступних примірників: {availableBooks.Count}");
     Console.WriteLine();
 
-    // Відписуємо лише логер. Лямбда-лічильник продовжує отримувати події.
     Console.WriteLine("=== Відписка першого підписника ===");
     service.Changed -= OnLibraryChanged;
 
@@ -181,7 +180,6 @@ try
     Console.WriteLine($"Рядків журналу до/після: {linesBefore}/{linesAfter}");
     Console.WriteLine();
 
-    // Невдала повторна видача не створює події навіть для лічильника.
     Console.WriteLine("=== Помилка без нової події ===");
     int beforeSecondFailure = changes;
     try
@@ -202,4 +200,288 @@ finally
 {
     service.Changed -= OnLibraryChanged;
     service.Changed -= counterHandler;
+}
+
+static bool TryRunReport(string[] args, LendingService service)
+{
+    string? command = null;
+
+    foreach (string arg in args)
+    {
+        if (arg.Equals("report-top", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-overdue", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-groups", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-sum", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-deferred", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-join", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-top-copies", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-query", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-benchmark", StringComparison.OrdinalIgnoreCase))
+        {
+            command = arg;
+            break;
+        }
+    }
+
+    if (command is null)
+    {
+        return false;
+    }
+
+    switch (command.ToLowerInvariant())
+    {
+        case "report-top":
+            PrintTopReaders(service);
+            break;
+        case "report-overdue":
+            PrintOverdue(service);
+            break;
+        case "report-groups":
+            PrintGroups(service);
+            break;
+        case "report-sum":
+            PrintTotals(service);
+            break;
+        case "report-deferred":
+            PrintDeferred();
+            break;
+        case "report-join":
+            PrintCopyLoans(service);
+            break;
+        case "report-top-copies":
+            PrintTopCopies(service);
+            break;
+        case "report-query":
+            PrintYearQuery(service);
+            break;
+        case "report-benchmark":
+            PrintBenchmark();
+            break;
+    }
+
+    return true;
+}
+
+static void PrintTopReaders(LendingService service)
+{
+    Console.WriteLine("=== Топ-5 читачів за кількістю видач ===");
+
+    IReadOnlyList<TopReaderLine> lines =
+        ReportService.TopReaders(service.AllLoans());
+
+    if (lines.Count == 0)
+    {
+        Console.WriteLine("Видач немає.");
+        return;
+    }
+
+    Console.WriteLine($"{"Читач",-12} {"Видач",6}");
+    foreach (TopReaderLine line in lines)
+    {
+        Console.WriteLine($"{line.ReaderId,-12} {line.LoanCount,6}");
+    }
+}
+
+static void PrintOverdue(LendingService service)
+{
+    DateTime asOf = DateTime.Today;
+
+    Console.WriteLine(
+        $"=== Прострочені видачі на {asOf:yyyy-MM-dd} " +
+        $"(строк {ReportService.LoanPeriodDays} днів) ===");
+
+    IReadOnlyList<OverdueLoanLine> lines =
+        ReportService.OverdueLoans(service.AllLoans(), asOf);
+
+    if (lines.Count == 0)
+    {
+        Console.WriteLine("Прострочених видач немає.");
+        return;
+    }
+
+    Console.WriteLine(
+        $"{"Видача",-8} {"Примірник",-10} {"Читач",-8} " +
+        $"{"Видано",-12} {"Строк до",-12} {"Днів",5}");
+
+    foreach (OverdueLoanLine line in lines)
+    {
+        Console.WriteLine(
+            $"{line.LoanId,-8} {line.BookCopyId,-10} {line.ReaderId,-8} " +
+            $"{line.IssuedOn,-12:yyyy-MM-dd} {line.DueOn,-12:yyyy-MM-dd} " +
+            $"{line.DaysOverdue,5}");
+    }
+}
+
+static void PrintGroups(LendingService service)
+{
+    Console.WriteLine("=== Примірники за роком видання ===");
+
+    IReadOnlyList<YearGroupSummary> lines =
+        ReportService.ByYear(service.AllBooks());
+
+    if (lines.Count == 0)
+    {
+        Console.WriteLine("Примірників немає.");
+        return;
+    }
+
+    Console.WriteLine($"{"Рік",-8} {"Примірників",12}");
+    foreach (YearGroupSummary line in lines)
+    {
+        Console.WriteLine($"{line.Year,-8} {line.CopyCount,12}");
+    }
+}
+
+static void PrintTotals(LendingService service)
+{
+    Console.WriteLine("=== Статистика примірників ===");
+
+    CopyStatistics totals =
+        ReportService.CopyTotals(service.AllBooks());
+
+    if (totals.TotalCopies == 0)
+    {
+        Console.WriteLine("Примірників немає.");
+    }
+
+    Console.WriteLine($"Усього примірників:        {totals.TotalCopies}");
+    Console.WriteLine($"Різних видань (ISBN):      {totals.DistinctEditions}");
+    Console.WriteLine(
+        $"Середня к-сть на видання: {totals.AverageCopiesPerEdition:0.##}");
+    Console.WriteLine(
+        $"Максимум примірників ISBN: {totals.MaxCopiesOfOneEdition}");
+}
+
+static void PrintDeferred()
+{
+    Console.WriteLine("=== Відкладене виконання LINQ ===");
+
+    DeferredExecutionReport report = DeferredExecutionDemo.Run();
+
+    Console.WriteLine(
+        $"Count() до додавання:     {report.CountBeforeAdd}");
+    Console.WriteLine(
+        $"Count() після додавання:  {report.CountAfterAdd}");
+    Console.WriteLine(
+        $"Знімок ToList():          {report.SnapshotCount}");
+    Console.WriteLine(
+        $"Count() після Clear():    {report.CountAfterClear}");
+    Console.WriteLine(
+        $"Знімок після Clear():     {report.SnapshotCountAfterClear}");
+    Console.WriteLine(
+        "Запит виконався знову після зміни списку, " +
+        "а знімок ToList() залишився незмінним.");
+}
+
+static void PrintCopyLoans(LendingService service)
+{
+    Console.WriteLine("=== Видачі кожного примірника ===");
+
+    IReadOnlyList<CopyLoanSummary> lines =
+        ReportService.CopyLoans(service.AllBooks(), service.AllLoans());
+
+    if (lines.Count == 0)
+    {
+        Console.WriteLine("Примірників немає.");
+        return;
+    }
+
+    Console.WriteLine(
+        $"{"Примірник",-10} {"ISBN",-16} {"Видач",6} {"Відкритих",10}");
+
+    foreach (CopyLoanSummary line in lines)
+    {
+        Console.WriteLine(
+            $"{line.CopyId,-10} {line.Isbn,-16} {line.LoanCount,6} {line.OpenLoanCount,10}");
+    }
+}
+
+static void PrintTopCopies(LendingService service)
+{
+    Console.WriteLine("=== Топ-5 примірників за кількістю видач ===");
+
+    IReadOnlyList<TopCopyLine> lines =
+        ReportService.TopBorrowedCopies(
+            service.AllBooks(),
+            service.AllLoans());
+
+    if (lines.Count == 0)
+    {
+        Console.WriteLine("Примірників немає.");
+        return;
+    }
+
+    Console.WriteLine(
+        $"{"Примірник",-10} {"ISBN",-16} {"Видач",6}");
+
+    foreach (TopCopyLine line in lines)
+    {
+        Console.WriteLine(
+            $"{line.CopyId,-10} {line.Isbn,-16} {line.LoanCount,6}");
+    }
+}
+
+static void PrintYearQuery(LendingService service)
+{
+    Console.WriteLine("=== Групування за роком: query syntax ===");
+
+    IReadOnlyList<BookCopy> copies = service.AllBooks();
+    IReadOnlyList<YearGroupSummary> methodSyntax =
+        ReportService.ByYear(copies);
+    IReadOnlyList<YearGroupSummary> querySyntax =
+        ReportService.ByYearQuerySyntax(copies);
+
+    if (querySyntax.Count == 0)
+    {
+        Console.WriteLine("Примірників немає.");
+    }
+    else
+    {
+        Console.WriteLine($"{"Рік",-8} {"Примірників",12}");
+        foreach (YearGroupSummary line in querySyntax)
+        {
+            Console.WriteLine($"{line.Year,-8} {line.CopyCount,12}");
+        }
+    }
+
+    bool same = ReportService.YearGroupsMatch(methodSyntax, querySyntax);
+    Console.WriteLine(
+        same
+            ? "Method syntax і query syntax дають однакові значення."
+            : "Method syntax і query syntax дають різні значення.");
+}
+
+static void PrintBenchmark()
+{
+    Console.WriteLine("=== Порівняння двох LINQ-запитів ===");
+
+    BenchmarkReport report = LinqBenchmark.Run();
+
+    Console.WriteLine($"Вхідних записів: {report.InputCount}");
+    Console.WriteLine($"Результатів:     {report.ResultCount}");
+    Console.WriteLine(
+        "Варіант A, мс:   " + string.Join(", ", report.VariantAMilliseconds));
+    Console.WriteLine(
+        "Варіант B, мс:   " + string.Join(", ", report.VariantBMilliseconds));
+    Console.WriteLine(
+        $"Медіана A, мс:   {report.VariantAMedianMilliseconds}");
+    Console.WriteLine(
+        $"Медіана B, мс:   {report.VariantBMedianMilliseconds}");
+    Console.WriteLine(
+        report.ResultsMatch
+            ? "Результати варіантів A і B однакові."
+            : "Результати варіантів A і B відрізняються.");
+
+    if (report.VariantAMedianMilliseconds < report.VariantBMedianMilliseconds)
+    {
+        Console.WriteLine("За медіаною швидший варіант A.");
+    }
+    else if (report.VariantBMedianMilliseconds < report.VariantAMedianMilliseconds)
+    {
+        Console.WriteLine("За медіаною швидший варіант B.");
+    }
+    else
+    {
+        Console.WriteLine("За медіаною час варіантів однаковий.");
+    }
 }

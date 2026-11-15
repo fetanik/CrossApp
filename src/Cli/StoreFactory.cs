@@ -1,5 +1,6 @@
 using Core;
 using Core.Abstractions;
+using Core.Domain;
 using Core.Storage;
 
 public sealed record StoreConfiguration(
@@ -45,9 +46,13 @@ public static class StoreFactory
         }
         else
         {
+            IReadOnlyList<BookCopy> copies =
+                SampleData.Copies();
+
             baseStore =
                 new InMemoryLibraryStore(
-                    SampleData.Copies());
+                    copies,
+                    SampleData.Loans(copies));
         }
 
         ILibraryStore store =
