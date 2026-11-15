@@ -9,7 +9,6 @@ public sealed class LendingService
     private readonly ILibraryStore _store;
     private readonly INotificationSink? _notificationSink;
 
-    // Другий параметр необов'язковий: існуючий код лабораторної №6 працює без змін.
     public LendingService(
         ILibraryStore store,
         INotificationSink? notificationSink = null)
@@ -18,7 +17,6 @@ public sealed class LendingService
         _notificationSink = notificationSink;
     }
 
-    // Підписники отримують повідомлення лише після успішної зміни даних.
     public event EventHandler<LibraryChangedEventArgs>? Changed;
 
     private void OnChanged(
@@ -29,10 +27,8 @@ public sealed class LendingService
     {
         var args = new LibraryChangedEventArgs(kind, copyId, readerId, issuedOn);
 
-        // Observer: невідома заздалегідь кількість підписників.
         Changed?.Invoke(this, args);
 
-        // Альтернативний варіант: явна залежність від абстракції через DI.
         _notificationSink?.Notify(args);
     }
 
@@ -104,7 +100,6 @@ public sealed class LendingService
 
     public BookCopy? FindBook(string id) => _store.GetCopyById(id);
 
-    // Func<BookCopy, bool> повертає значення bool, на відміну від події.
     public IReadOnlyList<BookCopy> SearchBooks(Func<BookCopy, bool> predicate) =>
         _store.FindCopies(predicate);
 }

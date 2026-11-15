@@ -8,8 +8,6 @@ public static class BookCsvImporter
 {
     private const char Separator = ';';
 
-    // Action<string> повідомляє зовнішньому коду про пропущений рядок.
-    // Параметр необов'язковий, тому попередній виклик Load(path) теж працює.
     public static ImportResult<BookDto> Load(
         string path,
         Action<string>? onSkipped = null)
