@@ -1,5 +1,7 @@
 using Core.Dto;
 
+using Core.Exceptions;
+
 namespace Core.Domain;
 
 public sealed class BookCopy
@@ -79,7 +81,7 @@ public sealed class BookCopy
     {
         if (IsIssued)
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Примірник {Id} вже виданий, повторна видача неможлива");
         }
 
@@ -90,7 +92,7 @@ public sealed class BookCopy
     {
         if (!IsIssued)
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Примірник {Id} не виданий, тому його неможливо повернути");
         }
 

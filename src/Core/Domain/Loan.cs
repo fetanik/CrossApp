@@ -1,3 +1,5 @@
+using Core.Exceptions;
+
 namespace Core.Domain;
 
 public sealed class Loan
@@ -105,7 +107,7 @@ public sealed class Loan
 
         if (!allowed)
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Перехід зі стану {Status} " +
                 $"у стан {newStatus} неможливий");
         }

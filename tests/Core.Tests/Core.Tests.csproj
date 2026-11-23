@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)coverlet.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.1.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Core\Core.csproj" />
+  </ItemGroup>
+
+  <Target Name="CopyCoverletCollector" AfterTargets="Build">
+    <ItemGroup>
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\coverlet.collector.dll" />
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\coverlet.core.dll" />
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\Mono.Cecil.dll" />
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\Mono.Cecil.Mdb.dll" />
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\Mono.Cecil.Pdb.dll" />
+      <CoverletCollectorFile Include="$(NuGetPackageRoot)coverlet.collector\*\build\net10.0\Mono.Cecil.Rocks.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CoverletCollectorFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- SDK 10 інакше підставляє лише теку coverlet.collector, і xUnit не стартує. -->
+  <Target Name="UseOutputDirectoryTestAdapter" BeforeTargets="VSTest" DependsOnTargets="SetXPlatDataCollectorPath">
+    <PropertyGroup>
+      <VSTestTestAdapterPath>$(TargetDir)</VSTestTestAdapterPath>
+    </PropertyGroup>
+  </Target>
+
+</Project>

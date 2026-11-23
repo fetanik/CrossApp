@@ -1,3 +1,5 @@
+using Core.Exceptions;
+
 namespace Core.Domain;
 
 public static class LoanService
@@ -13,7 +15,7 @@ public static class LoanService
     {
         if (book.IsIssued)
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Примірник {book.Id} вже виданий");
         }
 
@@ -24,7 +26,7 @@ public static class LoanService
 
         if (openLoans >= MaxOpenLoans)
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Читач {readerId} вже має " +
                 $"{openLoans} відкритих видач. " +
                 $"Максимум дозволено {MaxOpenLoans}");

@@ -1,10 +1,50 @@
-﻿using Cli.Notifications;
+﻿using System.Text.Json;
+using Cli.Notifications;
 using Core.Abstractions;
 using Core.Domain;
 using Core.Events;
+using Core.Exceptions;
 using Core.Import;
 using Core.Reports;
 using Core.Services;
+using Core.Threading;
+
+using var userCts = new CancellationTokenSource();
+using var timeoutCts = new CancellationTokenSource();
+
+Console.CancelKeyPress += (_, eventArgs) =>
+{
+    eventArgs.Cancel = true;
+    try
+    {
+        userCts.Cancel();
+    }
+    catch (ObjectDisposedException)
+    {
+    }
+};
+
+int? timeoutMs;
+int? delayMs;
+try
+{
+    timeoutMs = ReadOptionalNonNegative(args, "--timeout-ms");
+    delayMs = ReadOptionalNonNegative(args, "--delay-ms");
+}
+catch (ArgumentException ex)
+{
+    Console.WriteLine(ex.Message);
+    return;
+}
+
+if (timeoutMs is int configuredTimeout)
+{
+    timeoutCts.CancelAfter(configuredTimeout);
+}
+
+using CancellationTokenSource linkedCts = LinkedCancellation.Link(
+    userCts.Token,
+    timeoutCts.Token);
 
 StoreConfiguration configuration = StoreFactory.Create(args);
 var service = new LendingService(configuration.Store);
@@ -67,6 +107,18 @@ if (args.Any(arg => arg.Equals("--sink-demo", StringComparison.OrdinalIgnoreCase
     sinkService.ReturnCopy(demoLoan.Id);
 
     Console.WriteLine($"Події записані також до: {sinkPath}");
+    return;
+}
+
+if (HasOption(args, "--import") || HasOption(args, "--import-stream"))
+{
+    await RunCatalogImportAsync(
+        service,
+        args,
+        delayMs,
+        linkedCts.Token,
+        userCts.Token,
+        timeoutCts.Token);
     return;
 }
 
@@ -142,7 +194,7 @@ try
     {
         service.ReturnCopy(loan.Id);
     }
-    catch (InvalidOperationException ex)
+    catch (Exception ex) when (ex is DomainException or InvalidOperationException)
     {
         Console.WriteLine($"{ex.GetType().Name}: {ex.Message}");
     }
@@ -186,7 +238,7 @@ try
     {
         service.IssueCopy(book.Id, "R-003");
     }
-    catch (InvalidOperationException ex)
+    catch (Exception ex) when (ex is DomainException or InvalidOperationException)
     {
         Console.WriteLine($"{ex.GetType().Name}: {ex.Message}");
     }
@@ -216,7 +268,8 @@ static bool TryRunReport(string[] args, LendingService service)
             arg.Equals("report-join", StringComparison.OrdinalIgnoreCase) ||
             arg.Equals("report-top-copies", StringComparison.OrdinalIgnoreCase) ||
             arg.Equals("report-query", StringComparison.OrdinalIgnoreCase) ||
-            arg.Equals("report-benchmark", StringComparison.OrdinalIgnoreCase))
+            arg.Equals("report-benchmark", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("report-empty", StringComparison.OrdinalIgnoreCase))
         {
             command = arg;
             break;
@@ -256,6 +309,9 @@ static bool TryRunReport(string[] args, LendingService service)
             break;
         case "report-benchmark":
             PrintBenchmark();
+            break;
+        case "report-empty":
+            PrintEmptyReports();
             break;
     }
 
@@ -451,6 +507,31 @@ static void PrintYearQuery(LendingService service)
             : "Method syntax і query syntax дають різні значення.");
 }
 
+static void PrintEmptyReports()
+{
+    Console.WriteLine("=== Звіти на порожніх колекціях ===");
+
+    IReadOnlyList<TopReaderLine> topReaders =
+        ReportService.TopReaders(Array.Empty<Loan>());
+    IReadOnlyList<OverdueLoanLine> overdueLoans =
+        ReportService.OverdueLoans(Array.Empty<Loan>(), DateTime.Today);
+    IReadOnlyList<YearGroupSummary> yearGroups =
+        ReportService.ByYear(Array.Empty<BookCopy>());
+    CopyStatistics totals =
+        ReportService.CopyTotals(Array.Empty<BookCopy>());
+
+    Console.WriteLine($"Топ читачів, рядків:       {topReaders.Count}");
+    Console.WriteLine($"Прострочених видач:        {overdueLoans.Count}");
+    Console.WriteLine($"Груп за роком:             {yearGroups.Count}");
+    Console.WriteLine($"Усього примірників:        {totals.TotalCopies}");
+    Console.WriteLine($"Різних видань (ISBN):      {totals.DistinctEditions}");
+    Console.WriteLine(
+        $"Середня к-сть на видання: {totals.AverageCopiesPerEdition:0.##}");
+    Console.WriteLine(
+        $"Максимум примірників ISBN: {totals.MaxCopiesOfOneEdition}");
+    Console.WriteLine("Винятків немає: списки порожні, статистика нульова.");
+}
+
 static void PrintBenchmark()
 {
     Console.WriteLine("=== Порівняння двох LINQ-запитів ===");
@@ -484,4 +565,190 @@ static void PrintBenchmark()
     {
         Console.WriteLine("За медіаною час варіантів однаковий.");
     }
+}
+
+static async Task RunCatalogImportAsync(
+    LendingService service,
+    string[] args,
+    int? delayMs,
+    CancellationToken ct,
+    CancellationToken userToken,
+    CancellationToken timeoutToken)
+{
+    bool hasImport = TryReadTextOption(args, "--import", out string? importPath);
+    bool hasStream = TryReadTextOption(args, "--import-stream", out string? streamPath);
+
+    if ((hasImport && string.IsNullOrWhiteSpace(importPath)) ||
+        (hasStream && string.IsNullOrWhiteSpace(streamPath)))
+    {
+        Console.WriteLine(
+            "Використання: --import <файл.json> або --import-stream <файл.json> " +
+            "[--timeout-ms N] [--delay-ms N]");
+        return;
+    }
+
+    int changes = 0;
+    EventHandler<LibraryChangedEventArgs> onImported = (_, e) =>
+    {
+        changes++;
+        Console.WriteLine($"Changed: {e.Kind} CopyId={e.CopyId}");
+    };
+
+    service.Changed += onImported;
+
+    try
+    {
+        if (delayMs is int delay)
+        {
+            Console.WriteLine(
+                $"Очікування {delay} мс (демонстрація скасування)...");
+            await Task.Delay(delay, ct);
+        }
+
+        var importer = new JsonCatalogImporter();
+
+        if (hasImport)
+        {
+            await ImportBatchAsync(service, importer, importPath!, ct);
+            Console.WriteLine("Повторний імпорт того самого каталогу:");
+            await ImportBatchAsync(service, importer, importPath!, ct);
+        }
+
+        if (hasStream)
+        {
+            Console.WriteLine("=== Потоковий імпорт ===");
+            Console.WriteLine(
+                "Відсоток не показується: під час читання потоку загальна кількість записів ще невідома.");
+            IProgress<int> processed = new SyncProgress(count =>
+                Console.WriteLine($"Оброблено записів: {count}"));
+            int added = await service.ImportStreamAsync(
+                importer,
+                streamPath!,
+                ct,
+                processed);
+            Console.WriteLine($"Імпортовано записів: {added}");
+        }
+
+        Console.WriteLine($"Подій Changed під час імпорту: {changes}");
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("Імпорт скасовано.");
+        if (timeoutToken.IsCancellationRequested &&
+            !userToken.IsCancellationRequested)
+        {
+            Console.WriteLine("Причина: таймаут.");
+        }
+        else if (userToken.IsCancellationRequested)
+        {
+            Console.WriteLine("Причина: Ctrl+C.");
+        }
+    }
+    catch (DomainException ex)
+    {
+        Console.WriteLine($"Дані відхилено: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    catch (FileNotFoundException ex)
+    {
+        Console.WriteLine($"Файл не знайдено: {ex.FileName ?? ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    catch (DirectoryNotFoundException ex)
+    {
+        Console.WriteLine($"Файл не знайдено: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    catch (JsonException ex)
+    {
+        Console.WriteLine($"Помилка читання JSON: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    catch (IOException ex)
+    {
+        Console.WriteLine($"Помилка вводу-виводу: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    finally
+    {
+        service.Changed -= onImported;
+    }
+}
+
+static async Task ImportBatchAsync(
+    LendingService service,
+    JsonCatalogImporter importer,
+    string path,
+    CancellationToken ct)
+{
+    IProgress<int> progress = new SyncProgress(percent =>
+        Console.WriteLine($"Прогрес імпорту: {percent}%"));
+    int added = await service.ImportAsync(importer, path, ct, progress);
+    Console.WriteLine($"Імпортовано записів: {added}");
+}
+
+static bool HasOption(string[] args, string name)
+{
+    string prefix = name + "=";
+    return args.Any(arg =>
+        arg.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+        arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+}
+
+static bool TryReadTextOption(string[] args, string name, out string? value)
+{
+    value = null;
+    string prefix = name + "=";
+
+    for (int i = 0; i < args.Length; i++)
+    {
+        if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase))
+        {
+            if (i + 1 >= args.Length || args[i + 1].StartsWith('-'))
+            {
+                return true;
+            }
+
+            value = args[i + 1];
+            return true;
+        }
+
+        if (args[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = args[i][prefix.Length..];
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int? ReadOptionalNonNegative(string[] args, string name)
+{
+    if (!TryReadTextOption(args, name, out string? text))
+    {
+        return null;
+    }
+
+    if (text is not null &&
+        int.TryParse(text, out int value) &&
+        value >= 0)
+    {
+        return value;
+    }
+
+    throw new ArgumentException(
+        $"Параметр {name} потребує невід'ємного цілого числа.");
+}
+
+file sealed class SyncProgress : IProgress<int>
+{
+    private readonly Action<int> _handler;
+
+    public SyncProgress(Action<int> handler)
+    {
+        _handler = handler;
+    }
+
+    public void Report(int value) => _handler(value);
 }

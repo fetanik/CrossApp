@@ -1,5 +1,6 @@
 using Core.Abstractions;
 using Core.Domain;
+using Core.Exceptions;
 
 namespace Core.Storage;
 
@@ -45,7 +46,7 @@ public sealed class InMemoryLibraryStore : ILibraryStore
 
         if (_copies.ContainsKey(copy.Id))
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Примірник з id={copy.Id} уже існує.");
         }
 
@@ -71,7 +72,7 @@ public sealed class InMemoryLibraryStore : ILibraryStore
 
         if (_loans.ContainsKey(loan.Id))
         {
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Видача з id={loan.Id} уже існує.");
         }
 
